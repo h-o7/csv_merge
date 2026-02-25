@@ -182,17 +182,45 @@ def merge_and_download(*args):
         update_status(f"Merge failed: {e}", "crimson")
         console.error(e)
 
-# Event setup
-document.getElementById("area1").addEventListener("click", lambda: document.getElementById("file1").click())
+# ── Event wiring ────────────────────────────────────────────
+# File input clicks
+document.getElementById("area1").addEventListener("click", lambda e: document.getElementById("file1").click())
 document.getElementById("file1").addEventListener("change", create_proxy(lambda e: load_file(e, "df1")))
 
-document.getElementById("area2").addEventListener("click", lambda: document.getElementById("file2").click())
+document.getElementById("area2").addEventListener("click", lambda e: document.getElementById("file2").click())
 document.getElementById("file2").addEventListener("change", create_proxy(lambda e: load_file(e, "df2")))
 
+# Drag & drop support
+def setup_drag_drop(area_id, file_input_id):
+    area = document.getElementById(area_id)
+    
+    def on_dragover(e):
+        e.preventDefault()
+        area.classList.add("hover")
+    
+    def on_dragleave(e):
+        area.classList.remove("hover")
+    
+    def on_drop(e):
+        e.preventDefault()
+        area.classList.remove("hover")
+        if e.dataTransfer.files.length > 0:
+            input_el = document.getElementById(file_input_id)
+            input_el.files = e.dataTransfer.files
+            input_el.dispatchEvent(Event.new("change"))
+    
+    area.addEventListener("dragover", create_proxy(on_dragover))
+    area.addEventListener("dragleave", create_proxy(on_dragleave))
+    area.addEventListener("drop", create_proxy(on_drop))
+
+setup_drag_drop("area1", "file1")
+setup_drag_drop("area2", "file2")
+
+# Merge and column select
 document.getElementById("mergeBtn").addEventListener("click", create_proxy(merge_and_download))
 document.getElementById("valueColumn").addEventListener("change", create_proxy(on_value_column_change))
 
-update_status("Page loaded – Pyodide starting... (wait 10–40s first time)", "#3498db")
+update_status("Page loaded – ready (Pyodide startup may take 10–60s first time)", "#3498db")
 </py-script>
 
 </body>
