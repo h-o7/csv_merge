@@ -66,21 +66,10 @@
 import js
 from js import document, FileReader, URL, Blob, Event, console
 from pyodide.ffi import create_proxy
+import pandas as pd   # This should now work
 from io import StringIO
 
-# ── Install pandas asynchronously at startup ────────────────────────────────
-async def install_packages():
-    import micropip
-    await micropip.install('pandas')
-    console.log("[INSTALL] pandas installed successfully via micropip")
-    # Optional: add more packages here if needed later, e.g. await micropip.install('numpy')
-
-# Run the installer immediately (fire-and-forget, but we can await it if needed)
-js.pyodide.runPythonAsync("""
-await install_packages()
-""").catch(lambda e: console.error("[INSTALL ERROR]", str(e)))
-
-# Now define globals and functions (pandas should be available after install)
+# Globals
 df1 = None
 df2 = None
 selected_value_col = ""
