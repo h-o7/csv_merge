@@ -5,43 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>CSV Merger – A + B → C</title>
 
-  <!-- Latest PyScript (as of early 2026) -->
-  <link rel="stylesheet" href="https://pyscript.net/releases/2026.2.1/core.css" />
-  <script type="module" src="https://pyscript.net/releases/2026.2.1/core.js"></script>
-
-  <py-config>
-    packages = ["pandas"]
-  </py-config>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
   <style>
     body {
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
       max-width: 800px;
       margin: 2rem auto;
       padding: 0 1rem;
       line-height: 1.5;
+      color: #222;
     }
-    h1 { text-align: center; color: #2c3e50; }
-    h2 { text-align: center; color: #555; font-size: 1.1rem; margin-top: 0; }
+    h1 { text-align: center; color: #1a365d; margin-bottom: 0.3rem; }
+    h2 { text-align: center; color: #4a5568; font-size: 1.1rem; margin-top: 0; }
     .container {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 1.5rem;
       margin: 2rem 0;
     }
     .dropzone {
-      border: 2px dashed #aaa;
-      border-radius: 10px;
-      padding: 2rem;
+      border: 2px dashed #a0aec0;
+      border-radius: 12px;
+      padding: 2.5rem 1rem;
       text-align: center;
-      min-height: 140px;
-      transition: all 0.2s;
+      background: #f7fafc;
+      transition: all 0.2s ease;
       cursor: pointer;
+      min-height: 140px;
     }
-    .dropzone.hover { border-color: #3498db; background: #f0f8ff; }
-    .dropzone.ready { border-color: #27ae60; background: #f0fff0; }
+    .dropzone.hover {
+      border-color: #3182ce;
+      background: #ebf8ff;
+    }
+    .dropzone.ready {
+      border-color: #38a169;
+      background: #f0fff4;
+    }
+    .filename {
+      margin-top: 0.8rem;
+      color: #4a5568;
+      font-weight: 500;
+      word-break: break-all;
+    }
     button {
-      background: #27ae60;
+      background: #2f855a;
       color: white;
       border: none;
       padding: 1rem 2.5rem;
@@ -50,176 +58,202 @@
       cursor: pointer;
       margin: 2rem auto;
       display: block;
+      min-width: 240px;
     }
-    button:hover { background: #219653; }
-    button:disabled { background: #95a5a6; cursor: not-allowed; }
+    button:hover:not(:disabled) {
+      background: #276749;
+    }
+    button:disabled {
+      background: #a0aec0;
+      cursor: not-allowed;
+    }
     #status {
       text-align: center;
       font-weight: 500;
       min-height: 2em;
       margin: 1rem 0;
+      color: #4a5568;
       white-space: pre-wrap;
     }
-    small { color: #666; }
   </style>
 </head>
 <body>
 
 <h1>CSV Merger</h1>
-<h2>Match columns A + B (case-insensitive), put value from File 2 into C</h2>
+<h2>Match columns A + B (case-insensitive), add value to column C</h2>
 
 <div class="container">
   <div>
-    <h3>File 1 (base file – will receive column C)</h3>
+    <h3>File 1 (base file – gets new column C)</h3>
     <div id="drop1" class="dropzone">Click or drag File 1 here</div>
     <input type="file" id="file1" accept=".csv" style="display:none">
-    <div id="name1" style="text-align:center; margin-top:0.8rem; color:#555;"></div>
+    <div id="name1" class="filename"></div>
   </div>
 
   <div>
-    <h3>File 2 (lookup file – value comes from here)</h3>
+    <h3>File 2 (lookup file – value source)</h3>
     <div id="drop2" class="dropzone">Click or drag File 2 here</div>
     <input type="file" id="file2" accept=".csv" style="display:none">
-    <div id="name2" style="text-align:center; margin-top:0.8rem; color:#555;"></div>
+    <div id="name2" class="filename"></div>
   </div>
 </div>
 
 <button id="mergeBtn" disabled>Merge Files → Download Result</button>
 
-<div id="status">Waiting for both files… (first load may take 20–60 seconds)</div>
+<div id="status">Waiting for both CSV files…</div>
 
-<py-script>
-import js
-from js import document, FileReader, URL, Blob, Event, console
-from pyodide.ffi import create_proxy
-import pandas as pd
-from io import StringIO
+<script>
+// ────────────────────────────────────────────────────────────────
+let file1Data = null;
+let file2Data = null;
 
-df1 = None
-df2 = None
+// ── Helpers ─────────────────────────────────────────────────────
+function normalize(str) {
+  return (str || '').toString().trim().toLowerCase();
+}
 
-def update_status(msg, color="#444"):
-    document.getElementById("status").innerText = msg
-    document.getElementById("status").style.color = color
-    console.log("[STATUS] " + msg)
+function updateStatus(msg, color = '#4a5568') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.color = color;
+}
 
-def check_ready():
-    btn = document.getElementById("mergeBtn")
-    if df1 is not None and df2 is not None:
-        btn.disabled = False
-        update_status("Both files loaded – ready to merge", "#27ae60")
-    else:
-        btn.disabled = True
-        update_status("Waiting for both files…")
+function checkReady() {
+  const btn = document.getElementById('mergeBtn');
+  if (file1Data && file2Data) {
+    btn.disabled = false;
+    updateStatus('Both files ready – click to merge', '#2f855a');
+  } else {
+    btn.disabled = true;
+    updateStatus(file1Data ? 'Waiting for File 2…' : file2Data ? 'Waiting for File 1…' : 'Waiting for both files…');
+  }
+}
 
-def parse_csv(event, target):
-    global df1, df2
-    content = event.target.result
-    try:
-        df = pd.read_csv(StringIO(content))
-        if target == "df1":
-            df1 = df
-        else:
-            df2 = df
-        update_status(f"Loaded {target.upper()} ({len(df)} rows)", "#555")
-        check_ready()
-    except Exception as err:
-        update_status(f"Error reading CSV: {err}", "crimson")
-        console.error(err)
+// ── File loading ────────────────────────────────────────────────
+function setupDropzone(dropId, inputId, nameId, target) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+  const nameEl = document.getElementById(nameId);
 
-def load_file(e, target):
-    file = e.target.files[0]
-    if not file:
-        return
-    name_el = document.getElementById("name1" if target == "df1" else "name2")
-    name_el.innerText = file.name
-    reader = FileReader.new()
-    reader.onload = create_proxy(lambda ev: parse_csv(ev, target))
-    reader.readAsText(file)
+  // Click to open file dialog
+  drop.addEventListener('click', () => input.click());
 
-def merge_and_download(*args):
-    global df1, df2
-    if df1 is None or df2 is None:
-        return
+  // File selected via dialog
+  input.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    processFile(file, target, nameEl);
+  });
 
-    update_status("Merging…", "#1e90ff")
+  // Drag & drop
+  drop.addEventListener('dragover', e => {
+    e.preventDefault();
+    drop.classList.add('hover');
+  });
 
-    try:
-        # Check required columns
-        for df, name in [(df1, "File 1"), (df2, "File 2")]:
-            if 'A' not in df.columns or 'B' not in df.columns:
-                raise ValueError(f"Missing column A or B in {name}")
+  drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
 
-        # Normalize keys (case + whitespace insensitive)
-        df1_norm = df1.assign(
-            __A_norm = df1['A'].astype(str).str.strip().str.lower(),
-            __B_norm = df1['B'].astype(str).str.strip().str.lower()
-        )
-        df2_norm = df2.assign(
-            __A_norm = df2['A'].astype(str).str.strip().str.lower(),
-            __B_norm = df2['B'].astype(str).str.strip().str.lower()
-        )
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('hover');
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file, target, nameEl);
+  });
+}
 
-        # Find the value column in File 2 (first one that's not A or B)
-        value_cols = [c for c in df2_norm.columns if c not in ['A', 'B', '__A_norm', '__B_norm']]
-        if not value_cols:
-            raise ValueError("No value column found in File 2 (only A and B present?)")
-        value_col = value_cols[0]
+function processFile(file, target, nameEl) {
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    updateStatus('Please select a .csv file', '#e53e3e');
+    return;
+  }
 
-        # Create lookup dictionary
-        lookup = df2_norm.set_index(['__A_norm', '__B_norm'])[value_col].to_dict()
+  nameEl.textContent = file.name;
+  drop.classList.add('ready');
 
-        # Add column C
-        df1_norm['C'] = df1_norm.apply(
-            lambda row: lookup.get((row['__A_norm'], row['__B_norm']), ""),
-            axis=1
-        )
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: results => {
+      if (results.errors.length > 0) {
+        updateStatus('CSV parse error: ' + results.errors[0].message, '#e53e3e');
+        return;
+      }
+      if (target === 'file1') {
+        file1Data = results.data;
+      } else {
+        file2Data = results.data;
+      }
+      updateStatus(`Loaded ${target === 'file1' ? 'File 1' : 'File 2'} (${results.data.length} rows)`, '#2b6cb0');
+      checkReady();
+    },
+    error: err => {
+      updateStatus('Error reading file: ' + err, '#e53e3e');
+    }
+  });
+}
 
-        # Clean up temporary columns
-        result = df1_norm.drop(columns=['__A_norm', '__B_norm'])
+// ── Merge logic ─────────────────────────────────────────────────
+document.getElementById('mergeBtn').addEventListener('click', () => {
+  if (!file1Data || !file2Data) return;
 
-        # Generate CSV and download
-        csv_content = result.to_csv(index=False)
-        blob = Blob.new([csv_content], {"type": "text/csv"})
-        url = URL.createObjectURL(blob)
-        a = document.createElement("a")
-        a.href = url
-        a.download = "merged_result.csv"
-        a.click()
-        URL.revokeObjectURL(url)
+  updateStatus('Merging…', '#3182ce');
 
-        update_status("Done! File downloaded as merged_result.csv", "#27ae60")
+  try {
+    // Create lookup map: normalized(A|B) → value
+    const lookup = new Map();
 
-    except Exception as e:
-        update_status(f"Error during merge: {e}", "crimson")
-        console.error(e)
+    file2Data.forEach(row => {
+      const a = normalize(row.A);
+      const b = normalize(row.B);
+      const key = `${a}||${b}`;
 
-# ── Event setup ────────────────────────────────────────────────
-def setup_dropzone(drop_id, file_id):
-    drop = document.getElementById(drop_id)
-    file_input = document.getElementById(file_id)
+      // Find first column that's not A or B
+      let value = '';
+      for (const col in row) {
+        if (col !== 'A' && col !== 'B' && row[col] !== undefined && row[col] !== '') {
+          value = row[col];
+          break;
+        }
+      }
 
-    drop.addEventListener("click", lambda: file_input.click())
+      lookup.set(key, value);
+    });
 
-    drop.addEventListener("dragover", lambda e: (e.preventDefault(), drop.classList.add("hover")))
-    drop.addEventListener("dragleave", lambda e: drop.classList.remove("hover"))
-    drop.addEventListener("drop", lambda e: (
-        e.preventDefault(),
-        drop.classList.remove("hover"),
-        file_input.files = e.dataTransfer.files,
-        file_input.dispatchEvent(Event.new("change"))
-    ))
+    // Add C to file1 rows
+    const result = file1Data.map(row => {
+      const a = normalize(row.A);
+      const b = normalize(row.B);
+      const key = `${a}||${b}`;
+      const cValue = lookup.has(key) ? lookup.get(key) : '';
+      return { ...row, C: cValue };
+    });
 
-setup_dropzone("drop1", "file1")
-setup_dropzone("drop2", "file2")
+    // Generate CSV
+    const csv = Papa.unparse(result);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
 
-document.getElementById("file1").addEventListener("change", create_proxy(lambda e: load_file(e, "df1")))
-document.getElementById("file2").addEventListener("change", create_proxy(lambda e: load_file(e, "df2")))
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'merged_result.csv';
+    link.click();
 
-document.getElementById("mergeBtn").addEventListener("click", create_proxy(merge_and_download))
+    URL.revokeObjectURL(url);
 
-update_status("Ready – waiting for files (pandas loading in background)", "#3498db")
-</py-script>
+    updateStatus('Done! File downloaded as merged_result.csv', '#38a169');
+
+  } catch (err) {
+    updateStatus('Merge failed: ' + err.message, '#e53e3e');
+    console.error(err);
+  }
+});
+
+// ── Initialize ──────────────────────────────────────────────────
+setupDropzone('drop1', 'file1', 'name1', 'file1');
+setupDropzone('drop2', 'file2', 'name2', 'file2');
+
+updateStatus('Ready – drop or select two CSV files');
+</script>
 
 </body>
 </html>
