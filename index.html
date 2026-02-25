@@ -8,150 +8,90 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
   <style>
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      max-width: 800px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      line-height: 1.5;
-      color: #222;
-    }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; color: #222; }
     h1 { text-align: center; color: #1a365d; margin-bottom: 0.3rem; }
     h2 { text-align: center; color: #4a5568; font-size: 1.1rem; margin-top: 0; }
-    .container {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1.5rem;
-      margin: 2rem 0;
-    }
-    .dropzone {
-      border: 2px dashed #a0aec0;
-      border-radius: 12px;
-      padding: 2.5rem 1rem;
-      text-align: center;
-      background: #f7fafc;
-      transition: all 0.2s ease;
-      cursor: pointer;
-      min-height: 140px;
-    }
-    .dropzone.hover {
-      border-color: #3182ce;
-      background: #ebf8ff;
-    }
-    .dropzone.ready {
-      border-color: #38a169;
-      background: #f0fff4;
-    }
-    .filename {
-      margin-top: 0.8rem;
-      color: #4a5568;
-      font-weight: 500;
-      word-break: break-all;
-    }
-    button {
-      background: #2f855a;
-      color: white;
-      border: none;
-      padding: 1rem 2.5rem;
-      font-size: 1.15rem;
-      border-radius: 8px;
-      cursor: pointer;
-      margin: 2rem auto;
-      display: block;
-      min-width: 240px;
-    }
-    button:hover:not(:disabled) {
-      background: #276749;
-    }
-    button:disabled {
-      background: #a0aec0;
-      cursor: not-allowed;
-    }
-    #status {
-      text-align: center;
-      font-weight: 500;
-      min-height: 2em;
-      margin: 1rem 0;
-      color: #4a5568;
-      white-space: pre-wrap;
-    }
+    .container { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin: 2rem 0; }
+    .dropzone { border: 2px dashed #a0aec0; border-radius: 12px; padding: 2.5rem 1rem; text-align: center; background: #f7fafc; transition: all 0.2s; cursor: pointer; min-height: 140px; }
+    .dropzone.hover { border-color: #3182ce; background: #ebf8ff; }
+    .dropzone.ready { border-color: #38a169; background: #f0fff4; }
+    .filename { margin-top: 0.8rem; color: #4a5568; font-weight: 500; word-break: break-all; }
+    button { background: #2f855a; color: white; border: none; padding: 1rem 2.5rem; font-size: 1.15rem; border-radius: 8px; cursor: pointer; margin: 2rem auto; display: block; min-width: 240px; }
+    button:hover:not(:disabled) { background: #276749; }
+    button:disabled { background: #a0aec0; cursor: not-allowed; }
+    #status { text-align: center; font-weight: 500; min-height: 2.5em; margin: 1rem 0; white-space: pre-wrap; }
   </style>
 </head>
 <body>
 
 <h1>CSV Merger</h1>
-<h2>Match columns A + B (case-insensitive), add value to column C</h2>
+<h2>Match A + B (case-insensitive), add value to C from File 2</h2>
 
 <div class="container">
   <div>
-    <h3>File 1 (base file – gets new column C)</h3>
-    <div id="drop1" class="dropzone">Click or drag File 1 here</div>
+    <h3>File 1 (base – gets C)</h3>
+    <div id="drop1" class="dropzone">Click or drag File 1</div>
     <input type="file" id="file1" accept=".csv" style="display:none">
     <div id="name1" class="filename"></div>
   </div>
 
   <div>
-    <h3>File 2 (lookup file – value source)</h3>
-    <div id="drop2" class="dropzone">Click or drag File 2 here</div>
+    <h3>File 2 (values for C)</h3>
+    <div id="drop2" class="dropzone">Click or drag File 2</div>
     <input type="file" id="file2" accept=".csv" style="display:none">
     <div id="name2" class="filename"></div>
   </div>
 </div>
 
-<button id="mergeBtn" disabled>Merge Files → Download Result</button>
+<button id="mergeBtn" disabled>Merge → Download merged_result.csv</button>
 
-<div id="status">Waiting for both CSV files…</div>
+<div id="status">Waiting for both files…</div>
 
 <script>
-// ────────────────────────────────────────────────────────────────
 let file1Data = null;
 let file2Data = null;
 
-// ── Helpers ─────────────────────────────────────────────────────
 function normalize(str) {
   return (str || '').toString().trim().toLowerCase();
 }
 
 function updateStatus(msg, color = '#4a5568') {
-  const el = document.getElementById('status');
-  el.textContent = msg;
-  el.style.color = color;
+  document.getElementById('status').textContent = msg;
+  document.getElementById('status').style.color = color;
+  console.log('[STATUS]', msg);
 }
 
 function checkReady() {
   const btn = document.getElementById('mergeBtn');
   if (file1Data && file2Data) {
     btn.disabled = false;
-    updateStatus('Both files ready – click to merge', '#2f855a');
+    updateStatus('Both files loaded → click Merge', '#2f855a');
   } else {
     btn.disabled = true;
     updateStatus(file1Data ? 'Waiting for File 2…' : file2Data ? 'Waiting for File 1…' : 'Waiting for both files…');
   }
 }
 
-// ── File loading ────────────────────────────────────────────────
 function setupDropzone(dropId, inputId, nameId, target) {
   const drop = document.getElementById(dropId);
   const input = document.getElementById(inputId);
   const nameEl = document.getElementById(nameId);
 
-  // Click to open file dialog
   drop.addEventListener('click', () => input.click());
 
-  // File selected via dialog
   input.addEventListener('change', e => {
     const file = e.target.files[0];
-    if (!file) return;
-    processFile(file, target, nameEl);
+    if (file) processFile(file, target, nameEl);
   });
 
-  // Drag & drop
-  drop.addEventListener('dragover', e => {
+  ['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => {
     e.preventDefault();
     drop.classList.add('hover');
-  });
+  }));
 
-  drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+    if (ev === 'dragleave') drop.classList.remove('hover');
+  }));
 
   drop.addEventListener('drop', e => {
     e.preventDefault();
@@ -168,49 +108,54 @@ function processFile(file, target, nameEl) {
   }
 
   nameEl.textContent = file.name;
-  drop.classList.add('ready');
+  document.getElementById(target === 'file1' ? 'drop1' : 'drop2').classList.add('ready');
 
   Papa.parse(file, {
     header: true,
-    skipEmptyLines: true,
+    skipEmptyLines: 'greedy',
+    dynamicTyping: false,
     complete: results => {
+      console.log(`[PARSE COMPLETE] ${target}:`, results);
       if (results.errors.length > 0) {
-        updateStatus('CSV parse error: ' + results.errors[0].message, '#e53e3e');
+        updateStatus(`Parse error in ${target === 'file1' ? 'File 1' : 'File 2'}: ${results.errors.map(e => e.message).join('; ')}`, '#e53e3e');
         return;
       }
-      if (target === 'file1') {
-        file1Data = results.data;
-      } else {
-        file2Data = results.data;
+      if (results.data.length === 0) {
+        updateStatus(`File loaded but no data rows found`, '#e53e3e');
+        return;
       }
+
+      if (target === 'file1') file1Data = results.data;
+      else file2Data = results.data;
+
       updateStatus(`Loaded ${target === 'file1' ? 'File 1' : 'File 2'} (${results.data.length} rows)`, '#2b6cb0');
       checkReady();
     },
     error: err => {
-      updateStatus('Error reading file: ' + err, '#e53e3e');
+      updateStatus(`Error reading ${target === 'file1' ? 'File 1' : 'File 2'}: ${err}`, '#e53e3e');
+      console.error(err);
     }
   });
 }
 
-// ── Merge logic ─────────────────────────────────────────────────
 document.getElementById('mergeBtn').addEventListener('click', () => {
   if (!file1Data || !file2Data) return;
 
-  updateStatus('Merging…', '#3182ce');
+  updateStatus('Merging...', '#3182ce');
 
   try {
-    // Create lookup map: normalized(A|B) → value
     const lookup = new Map();
 
     file2Data.forEach(row => {
       const a = normalize(row.A);
       const b = normalize(row.B);
+      if (!a || !b) return; // skip invalid rows
+
       const key = `${a}||${b}`;
 
-      // Find first column that's not A or B
       let value = '';
       for (const col in row) {
-        if (col !== 'A' && col !== 'B' && row[col] !== undefined && row[col] !== '') {
+        if (col !== 'A' && col !== 'B' && row[col] != null && row[col] !== '') {
           value = row[col];
           break;
         }
@@ -219,28 +164,27 @@ document.getElementById('mergeBtn').addEventListener('click', () => {
       lookup.set(key, value);
     });
 
-    // Add C to file1 rows
+    if (lookup.size === 0) {
+      updateStatus('Warning: No valid lookup keys found in File 2', '#dd6b20');
+    }
+
     const result = file1Data.map(row => {
       const a = normalize(row.A);
       const b = normalize(row.B);
       const key = `${a}||${b}`;
-      const cValue = lookup.has(key) ? lookup.get(key) : '';
-      return { ...row, C: cValue };
+      return { ...row, C: lookup.get(key) || '' };
     });
 
-    // Generate CSV
     const csv = Papa.unparse(result);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-
     const link = document.createElement('a');
     link.href = url;
     link.download = 'merged_result.csv';
     link.click();
-
     URL.revokeObjectURL(url);
 
-    updateStatus('Done! File downloaded as merged_result.csv', '#38a169');
+    updateStatus('Success! Downloaded merged_result.csv', '#38a169');
 
   } catch (err) {
     updateStatus('Merge failed: ' + err.message, '#e53e3e');
@@ -248,12 +192,11 @@ document.getElementById('mergeBtn').addEventListener('click', () => {
   }
 });
 
-// ── Initialize ──────────────────────────────────────────────────
+// Init
 setupDropzone('drop1', 'file1', 'name1', 'file1');
 setupDropzone('drop2', 'file2', 'name2', 'file2');
 
-updateStatus('Ready – drop or select two CSV files');
+updateStatus('Ready – select or drop two CSV files');
 </script>
-
 </body>
 </html>
