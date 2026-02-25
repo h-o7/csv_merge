@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CSV Merger (PyScript + pandas) – Choose Column C</title>
+
+  <link rel="stylesheet" href="https://pyscript.net/releases/latest/core.css" />
+  <script type="module" src="https://pyscript.net/releases/latest/core.js"></script>
+
+  <py-env>
+    - pandas
+  </py-env>
+
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 820px; margin: 2rem auto; padding: 0 1rem; }
+    h1   { text-align: center; color: #2c3e50; margin-bottom: 0.4rem; }
+    h2   { text-align: center; color: #666; font-size: 1.1rem; margin-top: 0; }
+    .container { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1.5rem 0; }
+    .file-area { border: 2px dashed #aaa; border-radius: 10px; padding: 1.5rem; text-align: center; min-height: 120px; transition: all 0.2s; cursor: pointer; }
+    .file-area.ready   { border-color: #27ae60; background: #f0fff0; }
+    .file-area.hover   { border-color: #3498db; background: #ecf5ff; }
+    button { background: #27ae60; color: white; border: none; padding: 1rem 2.5rem; font-size: 1.15rem; border-radius: 8px; cursor: pointer; margin: 1.5rem auto; display: block; }
+    button:hover       { background: #219653; }
+    button:disabled    { background: #95a5a6; cursor: not-allowed; }
+    #status { text-align: center; font-weight: 500; min-height: 1.8em; margin: 1rem 0; color: #444; white-space: pre-wrap; }
+    .column-selects { margin: 1.2rem 0; text-align: center; display: none; }
+    .column-selects.show { display: block; }
+    label { font-weight: 500; margin-right: 0.8rem; }
+    select { padding: 0.5rem; font-size: 1rem; min-width: 240px; border-radius: 6px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+
+<h1>CSV Merger – PyScript Edition</h1>
+<h2>Match A + B (case-insensitive), choose column → C</h2>
+
+<div class="container">
+  <div>
+    <h3>File 1 (base – gets new C)</h3>
+    <div id="area1" class="file-area">Click or drag File 1 here</div>
+    <input type="file" id="file1" accept=".csv" style="display:none;">
+    <div id="name1" style="margin-top:0.6rem; color:#555; min-height:1.2em;"></div>
+  </div>
+
+  <div>
+    <h3>File 2 (lookup – pick value column)</h3>
+    <div id="area2" class="file-area">Click or drag File 2 here</div>
+    <input type="file" id="file2" accept=".csv" style="display:none;">
+    <div id="name2" style="margin-top:0.6rem; color:#555; min-height:1.2em;"></div>
+  </div>
+</div>
+
+<div id="columnSelects" class="column-selects">
+  <label for="valueColumn">Column from File 2 to become C:</label>
+  <select id="valueColumn">
+    <option value="">— Select one —</option>
+  </select>
+</div>
+
+<button id="mergeBtn" disabled>Merge → Download merged_result.csv</button>
+
+<div id="status">Waiting for files… (Pyodide + pandas may take 10–40 seconds to load first time)</div>
+
+<py-script>
+import js
+from js import document, FileReader, URL, Blob, Event, console
+from pyodide.ffi import create_proxy
+import pandas as pd
+from io import StringIO
+
+df1 = None
+df2 = None
+selected_value_col = ""
+
+def update_status(msg, color="#444"):
+    s = document.getElementById("status")
+    s.innerText = msg
+    s.style.color = color
+    console.log("[STATUS] " + msg)
+
+def check_ready():
+    btn = document.getElementById("mergeBtn")
+    has_df1 = df1 is not None
+    has_df2 = df2 is not None
+    has_col = selected_value_col.strip() != ""
+    
+    state = f"df1: {has_df1}, df2: {has_df2}, col: '{selected_value_col}'"
+    console.log("[CHECK] " + state)
+    
+    if has_df1 and has_df2 and has_col:
+        btn.disabled = False
+        update_status("Ready to merge!", "#27ae60")
+    elif has_df1 and has_df2:
+        update_status("Please select a column from File 2", "#e67e22")
+    else:
+        update_status("Waiting... (check console for errors)", "#d35400" if not has_df1 or not has_df2 else "#444")
+
+def populate_column_dropdown():
+    if df2 is None:
+        return
+    select = document.getElementById("valueColumn")
+    select.innerHTML = '<option value="">— Select one —</option>'
+    for col in df2.columns:
+        opt = document.createElement("option")
+        opt.value = col
+        opt.text = col + ("  ← key column" if col in ["A", "B"] else "")
+        select.appendChild(opt)
+    document.getElementById("columnSelects").classList.add("show")
+    update_status("File 2 loaded – please choose column for C", "#e67e22")
+
+def on_value_column_change(event):
+    global selected_value_col
+    selected_value_col = event.target.value.strip()
+    console.log("[COL SELECT] Chosen: " + selected_value_col)
+    check_ready()
+
+def parse_csv(event, target):
+    global df1, df2
+    content = event.target.result
+    try:
+        df = pd.read_csv(StringIO(content))
+        if target == "df1":
+            df1 = df
+            console.log(f"[PARSE OK] File 1 – {len(df)} rows, columns: {list(df.columns)}")
+        else:
+            df2 = df
+            console.log(f"[PARSE OK] File 2 – {len(df)} rows, columns: {list(df.columns)}")
+            populate_column_dropdown()
+        check_ready()
+    except Exception as err:
+        msg = f"Parse failed for {target}: {err}"
+        update_status(msg, "crimson")
+        console.error(msg)
+
+def load_file(e, target):
+    file = e.target.files[0]
+    if not file: return
+    document.getElementById(f"name{ '1' if target=='df1' else '2' }").innerText = file.name
+    reader = FileReader.new()
+    reader.onload = create_proxy(lambda ev: parse_csv(ev, target))
+    reader.readAsText(file)
+
+def merge_and_download(*args):
+    global df1, df2, selected_value_col
+    if df1 is None or df2 is None or not selected_value_col:
+        update_status("Cannot merge – missing data or column", "crimson")
+        return
+
+    update_status("Merging... (may take a few seconds)", "#1e90ff")
+    
+    try:
+        df1_norm = df1.assign(
+            __A_norm = df1['A'].astype(str).str.strip().str.lower(),
+            __B_norm = df1['B'].astype(str).str.strip().str.lower()
+        )
+        df2_norm = df2.assign(
+            __A_norm = df2['A'].astype(str).str.strip().str.lower(),
+            __B_norm = df2['B'].astype(str).str.strip().str.lower()
+        )
+
+        lookup = df2_norm.set_index(['__A_norm', '__B_norm'])[selected_value_col].to_dict()
+
+        df1_norm['C'] = df1_norm.apply(
+            lambda row: lookup.get((row['__A_norm'], row['__B_norm']), ""),
+            axis=1
+        )
+
+        result = df1_norm.drop(columns=['__A_norm', '__B_norm'])
+        csv = result.to_csv(index=False)
+
+        blob = Blob.new([csv], {"type": "text/csv"})
+        url = URL.createObjectURL(blob)
+        a = document.createElement("a")
+        a.href = url
+        a.download = "merged_result.csv"
+        a.click()
+        URL.revokeObjectURL(url)
+
+        update_status("Downloaded! Check your downloads folder.", "#27ae60")
+    except Exception as e:
+        update_status(f"Merge failed: {e}", "crimson")
+        console.error(e)
+
+# Event setup
+document.getElementById("area1").addEventListener("click", lambda: document.getElementById("file1").click())
+document.getElementById("file1").addEventListener("change", create_proxy(lambda e: load_file(e, "df1")))
+
+document.getElementById("area2").addEventListener("click", lambda: document.getElementById("file2").click())
+document.getElementById("file2").addEventListener("change", create_proxy(lambda e: load_file(e, "df2")))
+
+document.getElementById("mergeBtn").addEventListener("click", create_proxy(merge_and_download))
+document.getElementById("valueColumn").addEventListener("change", create_proxy(on_value_column_change))
+
+update_status("Page loaded – Pyodide starting... (wait 10–40s first time)", "#3498db")
+</py-script>
+
+</body>
+</html>
