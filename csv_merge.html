@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CSV Merger – Match A+B → Add C (case-insensitive)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { text-align: center; color: #2c3e50; }
+    .file-box { border: 2px dashed #aaa; padding: 1.5rem; margin: 1rem 0; border-radius: 8px; text-align: center; cursor: pointer; }
+    .file-box.dragover { border-color: #3498db; background: #ecf5ff; }
+    button { background: #27ae60; color: white; border: none; padding: 0.9rem 2rem; font-size: 1.1rem; border-radius: 6px; cursor: pointer; margin: 1.5rem auto; display: block; }
+    button:hover { background: #219653; }
+    button:disabled { background: #95a5a6; cursor: not-allowed; }
+    #status { text-align: center; margin: 1rem 0; min-height: 1.5em; }
+    pre { background: #f8f9fa; padding: 1rem; border-radius: 6px; overflow-x: auto; max-height: 200px; }
+    label { display: block; margin: 0.8rem 0 0.3rem; font-weight: 500; }
+  </style>
+</head>
+<body>
+
+<h1>CSV Merger<br><small>Match columns A + B (case-insensitive), add value to C</small></h1>
+
+<div>
+  <label>File 1 (base file — will get new column C)</label>
+  <div id="drop1" class="file-box">Click or drag File 1 here<br><small>(or click to select)</small></div>
+  <input type="file" id="file1" accept=".csv" style="display:none">
+  <div id="name1" style="text-align:center; color:#555; min-height:1.2em;"></div>
+</div>
+
+<div>
+  <label>File 2 (lookup file — values to bring into C)</label>
+  <div id="drop2" class="file-box">Click or drag File 2 here<br><small>(or click to select)</small></div>
+  <input type="file" id="file2" accept=".csv" style="display:none">
+  <div id="name2" style="text-align:center; color:#555; min-height:1.2em;"></div>
+</div>
+
+<button id="mergeBtn" disabled>Merge Files → Download Result</button>
+
+<div id="status"></div>
+
+<script>
+// ── Globals ────────────────────────────────────────
+let df1 = null;   // array of objects
+let df2 = null;
+let filename1 = "";
+let filename2 = "";
+
+// ── Drag & Drop + Click handling ───────────────────
+function setupDropZone(dropId, fileInputId, nameDivId, targetVar) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(fileInputId);
+  const nameDiv = document.getElementById(nameDivId);
+
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', e => loadFile(e.target.files[0], targetVar, nameDiv));
+
+  drop.addEventListener('dragover', e => {
+    e.preventDefault(); drop.classList.add('dragover');
+  });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('dragover');
+    if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0], targetVar, nameDiv);
+  });
+}
+
+function loadFile(file, targetVar, nameDiv) {
+  if (!file || !file.name.endsWith('.csv')) {
+    alert("Please select a .csv file");
+    return;
+  }
+  nameDiv.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    Papa.parse(e.target.result, {
+      header: true,
+      skipEmptyLines: true,
+      complete: results => {
+        window[targetVar] = results.data;
+        checkReady();
+      },
+      error: err => alert("CSV parse error: " + err)
+    });
+  };
+  reader.readAsText(file);
+}
+
+// ── Check if both files loaded ─────────────────────
+function checkReady() {
+  const btn = document.getElementById('mergeBtn');
+  btn.disabled = !(df1 && df2);
+  document.getElementById('status').textContent = df1 && df2 ? "Both files ready!" : "";
+}
+
+// ── Merge logic ────────────────────────────────────
+document.getElementById('mergeBtn').onclick = () => {
+  const status = document.getElementById('status');
+  status.textContent = "Merging...";
+
+  try {
+    // Normalize keys for case-insensitive + trim match
+    const lookup = new Map();
+
+    df2.forEach(row => {
+      let a = (row.A || "").toString().trim().toLowerCase();
+      let b = (row.B || "").toString().trim().toLowerCase();
+      let key = a + "||" + b;   // simple composite key
+
+      // Take first non-A/non-B column as value (like before)
+      let valueCol = Object.keys(row).find(k => k !== "A" && k !== "B" && row[k] !== "");
+      let value = valueCol ? row[valueCol] : "";
+
+      lookup.set(key, value);
+    });
+
+    // Add C to file 1
+    const result = df1.map(row => {
+      let a = (row.A || "").toString().trim().toLowerCase();
+      let b = (row.B || "").toString().trim().toLowerCase();
+      let key = a + "||" + b;
+      let c = lookup.has(key) ? lookup.get(key) : "";
+      return { ...row, C: c };
+    });
+
+    // Generate CSV
+    const csv = Papa.unparse(result);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "merged_result.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+
+    status.textContent = "Done! File downloaded.";
+  } catch (err) {
+    status.textContent = "Error: " + err.message;
+    console.error(err);
+  }
+};
+
+// Init
+setupDropZone("drop1", "file1", "name1", "df1");
+setupDropZone("drop2", "file2", "name2", "df2");
+</script>
+
+</body>
+</html>
