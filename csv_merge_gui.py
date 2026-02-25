@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>CSV Merger (PyScript + pandas) – Choose Column C</title>
 
-  <link rel="stylesheet" href="https://pyscript.net/releases/latest/core.css" />
-  <script type="module" src="https://pyscript.net/releases/latest/core.js"></script>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2026.2.1/core.css" />
+  <script type="module" src="https://pyscript.net/releases/2026.2.1/core.js"></script>
 
   <py-env>
     - pandas
